@@ -67,3 +67,95 @@ import Testing
         }
     }
 }
+
+@Suite struct ChangeRequestTests {
+    let address = URL(string: "http://127.0.0.1:3000")!
+
+    /// The body as JSON values, so key order and formatting don't matter.
+    func jsonBody(_ request: URLRequest) throws -> NSDictionary {
+        let body = try #require(request.httpBody)
+        return try #require(try JSONSerialization.jsonObject(with: body) as? NSDictionary)
+    }
+
+    @Test func addPostsTheTitle() throws {
+        let request = TodoServer.addRequest(at: address, title: "Buy milk")
+        #expect(request.httpMethod == "POST")
+        #expect(request.url == URL(string: "http://127.0.0.1:3000/api/todos")!)
+        #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
+        #expect(try jsonBody(request) == ["title": "Buy milk"])
+    }
+
+    @Test func renamePatchesTheTitleOfThatTodo() throws {
+        let request = TodoServer.renameRequest(at: address, id: 7, title: "Walk the dog")
+        #expect(request.httpMethod == "PATCH")
+        #expect(request.url == URL(string: "http://127.0.0.1:3000/api/todos/7")!)
+        #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
+        #expect(try jsonBody(request) == ["title": "Walk the dog"])
+    }
+
+    @Test func toggleOfAnActiveTodoPatchesItDone() throws {
+        let request = TodoServer.toggleRequest(at: address, todo: Todo(id: 3, title: "Buy milk", done: false))
+        #expect(request.httpMethod == "PATCH")
+        #expect(request.url == URL(string: "http://127.0.0.1:3000/api/todos/3")!)
+        #expect(try jsonBody(request) == ["done": true])
+    }
+
+    @Test func toggleOfADoneTodoPatchesItActive() throws {
+        let request = TodoServer.toggleRequest(at: address, todo: Todo(id: 3, title: "Buy milk", done: true))
+        #expect(request.httpMethod == "PATCH")
+        #expect(request.url == URL(string: "http://127.0.0.1:3000/api/todos/3")!)
+        #expect(try jsonBody(request) == ["done": false])
+    }
+
+    @Test func deleteSendsDeleteForThatTodoWithNoBody() {
+        let request = TodoServer.deleteRequest(at: address, id: 12)
+        #expect(request.httpMethod == "DELETE")
+        #expect(request.url == URL(string: "http://127.0.0.1:3000/api/todos/12")!)
+        #expect(request.httpBody == nil)
+    }
+
+    @Test func keepsAPathOnTheServerAddress() {
+        let request = TodoServer.deleteRequest(at: URL(string: "http://example.test/todo")!, id: 1)
+        #expect(request.url == URL(string: "http://example.test/todo/api/todos/1")!)
+    }
+}
+
+@Suite struct CheckChangeTests {
+    @Test func acceptsCreatedOkAndNoContent() throws {
+        try TodoServer.checkChange(status: 201, data: Data(#"{"id":1,"title":"Buy milk","done":false}"#.utf8))
+        try TodoServer.checkChange(status: 200, data: Data(#"{"id":1,"title":"Buy milk","done":true}"#.utf8))
+        try TodoServer.checkChange(status: 204, data: Data())
+    }
+
+    @Test func throwsTheServersErrorForABlankTitle() {
+        let json = #"{"error":"title must be a non-empty string"}"#
+        #expect(throws: TodoServerError.server(status: 400, message: "title must be a non-empty string")) {
+            try TodoServer.checkChange(status: 400, data: Data(json.utf8))
+        }
+    }
+
+    @Test func throwsTheServersErrorForAnUnknownId() {
+        let json = #"{"error":"no todo with id 42"}"#
+        #expect(throws: TodoServerError.server(status: 404, message: "no todo with id 42")) {
+            try TodoServer.checkChange(status: 404, data: Data(json.utf8))
+        }
+    }
+
+    @Test func theErrorMessageShowsWhatTheServerSaid() {
+        let message = TodoServerError.server(status: 400, message: "title must be a non-empty string").message
+        #expect(message.contains("title must be a non-empty string"))
+    }
+
+    @Test func rejectsAFailureWithoutAnErrorBody() {
+        #expect(throws: TodoServerError.badResponse(status: 502)) {
+            try TodoServer.checkChange(status: 502, data: Data("Bad Gateway".utf8))
+        }
+    }
+
+    @Test func reportsAnUnreachableServerByItsAddress() async throws {
+        let address = URL(string: "http://127.0.0.1:9")!
+        await #expect(throws: TodoServerError.unreachable(address)) {
+            try await TodoServer(address: address).add(title: "Buy milk")
+        }
+    }
+}
