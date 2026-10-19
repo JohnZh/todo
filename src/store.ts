@@ -2,20 +2,27 @@ import { createTodo, toggle, type Todo } from "./todo.js";
 
 export class TodoStore {
   private readonly todos = new Map<number, Todo>();
-  private nextId = 1;
+  private next = 1;
 
-  static from(todos: Todo[]): TodoStore {
+  // nextId lets a store pick up after Todos that were deleted before it was saved.
+  static from(todos: Todo[], nextId = 1): TodoStore {
     const store = new TodoStore();
+    store.next = nextId;
     for (const todo of todos) {
       store.todos.set(todo.id, todo);
-      store.nextId = Math.max(store.nextId, todo.id + 1);
+      store.next = Math.max(store.next, todo.id + 1);
     }
     return store;
   }
 
+  // The id the next Add will use; no Todo has ever had it.
+  get nextId(): number {
+    return this.next;
+  }
+
   add(title: string): Todo {
-    const todo = createTodo(this.nextId, title);
-    this.nextId++;
+    const todo = createTodo(this.next, title);
+    this.next++;
     this.todos.set(todo.id, todo);
     return todo;
   }
