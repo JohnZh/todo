@@ -21,7 +21,12 @@ struct TodoMacApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
+        // Activation is only a request the system may turn down, so also raise the window, once
+        // SwiftUI has made it.
+        DispatchQueue.main.async {
+            NSApp.windows.first?.orderFrontRegardless()
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
