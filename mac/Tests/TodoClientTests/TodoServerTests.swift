@@ -159,3 +159,29 @@ import Testing
         }
     }
 }
+
+@Suite struct ListURLTests {
+    let server = TodoServer(address: URL(string: "http://127.0.0.1:3000")!)
+
+    private func query(_ url: URL) -> [String: String] {
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        return Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
+    }
+
+    @Test(arguments: [(Filter.all, "all"), (.active, "active"), (.done, "done")])
+    func sendsTheFilter(filter: Filter, value: String) {
+        let url = server.listURL(filter: filter, sort: .added)
+        #expect(query(url)["filter"] == value)
+    }
+
+    @Test(arguments: [(Sort.added, "id"), (.title, "title"), (.activeFirst, "done")])
+    func sendsTheSort(sort: Sort, value: String) {
+        let url = server.listURL(filter: .all, sort: sort)
+        #expect(query(url)["sort"] == value)
+    }
+
+    @Test func asksForTheTodosPath() {
+        let url = server.listURL(filter: .done, sort: .title)
+        #expect(url.absoluteString == "http://127.0.0.1:3000/api/todos?filter=done&sort=title")
+    }
+}
