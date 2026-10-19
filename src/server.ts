@@ -19,18 +19,19 @@ class HttpError extends Error {
 }
 
 export async function createTodoServer(path: string): Promise<Server> {
-  let store = TodoStore.from(await loadTodos(path));
+  const saved = await loadTodos(path);
+  let store = TodoStore.from(saved.todos, saved.nextId);
   // Mutations run one at a time, so saves land in order and a failed save can be undone.
   let queue = Promise.resolve();
 
   function mutate<T>(change: () => T): Promise<T> {
     const run = queue.then(async () => {
-      const before = store.list();
+      const before = { nextId: store.nextId, todos: store.list() };
       const result = change();
       try {
-        await saveTodos(path, store.list());
+        await saveTodos(path, { nextId: store.nextId, todos: store.list() });
       } catch (error) {
-        store = TodoStore.from(before);
+        store = TodoStore.from(before.todos, before.nextId);
         throw error;
       }
       return result;

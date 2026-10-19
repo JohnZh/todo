@@ -1,6 +1,6 @@
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -39,7 +39,15 @@ function send(url: string, method: string, body?: unknown): Promise<Response> {
 }
 
 async function seed(todos: Todo[]): Promise<void> {
-  await saveTodos(path, todos);
+  await saveTodos(path, { nextId: Math.max(0, ...todos.map((t) => t.id)) + 1, todos });
+}
+
+async function savedTodos(): Promise<Todo[]> {
+  return (await loadTodos(path)).todos;
+}
+
+async function add(base: string, title: string): Promise<Todo> {
+  return (await send(`${base}/api/todos`, "POST", { title }).then((r) => r.json())) as Todo;
 }
 
 // saveTodos renames a fresh temp file over the old one, so any save changes the inode.
@@ -120,7 +128,7 @@ describe("POST /api/todos", () => {
     expect(res.status).toBe(201);
     expect(await res.json()).toEqual({ id: 1, title: "buy milk", done: false });
     await send(`${base}/api/todos`, "POST", { title: "walk dog" });
-    expect(await loadTodos(path)).toEqual([
+    expect(await savedTodos()).toEqual([
       { id: 1, title: "buy milk", done: false },
       { id: 2, title: "walk dog", done: false },
     ]);
@@ -159,7 +167,7 @@ describe("PATCH /api/todos/:id", () => {
     const res = await send(`${base}/api/todos/2`, "PATCH", { title: " apricot " });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ id: 2, title: "apricot", done: true });
-    expect((await loadTodos(path))[1]).toEqual({ id: 2, title: "apricot", done: true });
+    expect((await savedTodos())[1]).toEqual({ id: 2, title: "apricot", done: true });
   });
 
   it.each([true, false])("sets done to %s", async (done) => {
@@ -170,7 +178,7 @@ describe("PATCH /api/todos/:id", () => {
       expect(res.status).toBe(200);
       expect(((await res.json()) as Todo).done).toBe(done);
     }
-    expect((await loadTodos(path)).map((t) => t.done)).toEqual([done, done, false]);
+    expect((await savedTodos()).map((t) => t.done)).toEqual([done, done, false]);
   });
 
   it("renames and sets done together", async () => {
@@ -179,7 +187,7 @@ describe("PATCH /api/todos/:id", () => {
     const res = await send(`${base}/api/todos/3`, "PATCH", { title: "plum", done: true });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ id: 3, title: "plum", done: true });
-    expect((await loadTodos(path))[2]).toEqual({ id: 3, title: "plum", done: true });
+    expect((await savedTodos())[2]).toEqual({ id: 3, title: "plum", done: true });
   });
 
   it.each([
@@ -219,7 +227,7 @@ describe("DELETE /api/todos/:id", () => {
     const res = await fetch(`${base}/api/todos/2`, { method: "DELETE" });
     expect(res.status).toBe(204);
     expect(await res.text()).toBe("");
-    expect((await loadTodos(path)).map((t) => t.id)).toEqual([1, 3]);
+    expect((await savedTodos()).map((t) => t.id)).toEqual([1, 3]);
   });
 
   it("responds 404 for an unknown id and changes nothing", async () => {
@@ -289,5 +297,50 @@ describe("persistence across servers", () => {
     expect(await res.json()).toHaveProperty("error");
     const body = (await fetch(`${base}/api/todos`).then((r) => r.json())) as { todos: Todo[] };
     expect(body.todos).toEqual(seeded);
+  });
+
+  it("does not reuse the id of a deleted todo after a restart", async () => {
+    await seed(seeded);
+    const first = await start();
+    expect((await fetch(`${first}/api/todos/3`, { method: "DELETE" })).status).toBe(204);
+
+    const second = await start();
+    expect(await add(second, "d")).toEqual({ id: 4, title: "d", done: false });
+  });
+
+  it("does not reuse ids after a restart even when every todo was deleted", async () => {
+    const first = await start();
+    expect((await add(first, "a")).id).toBe(1);
+    expect((await add(first, "b")).id).toBe(2);
+    await fetch(`${first}/api/todos/1`, { method: "DELETE" });
+    await fetch(`${first}/api/todos/2`, { method: "DELETE" });
+
+    const second = await start();
+    expect((await add(second, "c")).id).toBe(3);
+  });
+
+  it("loads an old bare-array file and upgrades it to the new format on the next change", async () => {
+    await writeFile(path, JSON.stringify([seeded[0], seeded[2]]));
+    const base = await start();
+    expect(await add(base, "d")).toEqual({ id: 4, title: "d", done: false });
+    expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
+      nextId: 5,
+      todos: [seeded[0], seeded[2], { id: 4, title: "d", done: false }],
+    });
+  });
+
+  it("refuses to start on a file whose nextId is not past every saved id", async () => {
+    await writeFile(path, JSON.stringify({ nextId: 3, todos: seeded }));
+    await expect(createTodoServer(path)).rejects.toThrow("nextId must be greater than every todo id, but 3 <= 3");
+  });
+
+  it("does not reuse an id after a failed save is undone", async () => {
+    await seed(seeded);
+    const base = await start();
+    await fetch(`${base}/api/todos/3`, { method: "DELETE" });
+    await rm(dir, { recursive: true, force: true });
+    expect((await send(`${base}/api/todos`, "POST", { title: "lost" })).status).toBe(500);
+    await mkdir(dir);
+    expect((await add(base, "d")).id).toBe(4);
   });
 });
