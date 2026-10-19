@@ -14,19 +14,30 @@ final class TodoListModel {
 
     let server: TodoServer
     private(set) var state: State = .loading
+    /// The chosen Filter and Sort, kept for every fetch whatever caused it.
+    var filter: Filter = .all
+    var sort: Sort = .added
 
     init(server: TodoServer) {
         self.server = server
     }
 
-    /// Fetches every Todo again. Called when the window comes to the front; there is no polling.
+    /// Fetches the list again in the chosen Filter and Sort. Called when the window comes to the
+    /// front and when either choice changes; there is no polling.
     func refresh() async {
+        let filter = filter
+        let sort = sort
+        let result: State
         do {
-            state = .loaded(try await server.list())
+            result = .loaded(try await server.list(filter: filter, sort: sort))
         } catch let error as TodoServerError {
-            state = .failed(error.message)
+            result = .failed(error.message)
         } catch {
-            state = .failed(error.localizedDescription)
+            result = .failed(error.localizedDescription)
         }
+        // A fetch for a Filter or Sort that has since been changed again is out of date: the
+        // fetch for the newer choice shows its own answer.
+        guard filter == self.filter, sort == self.sort else { return }
+        state = result
     }
 }
