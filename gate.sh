@@ -5,3 +5,5 @@ cd "$(dirname "$0")"
 npm ci --no-audit --no-fund
 npm run typecheck
 npm test
+swift build --package-path mac
+swift test --package-path mac
