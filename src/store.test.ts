@@ -24,6 +24,17 @@ describe("TodoStore.from", () => {
     expect(TodoStore.from([]).add("a").id).toBe(1);
   });
 
+  it("continues ids from the given nextId when it is past the max id", () => {
+    const store = TodoStore.from([{ id: 2, title: "b", done: false }], 5);
+    expect(store.nextId).toBe(5);
+    expect(store.add("e").id).toBe(5);
+    expect(TodoStore.from([], 3).add("c").id).toBe(3);
+  });
+
+  it("ignores a nextId that is not past the max id", () => {
+    expect(TodoStore.from([{ id: 4, title: "d", done: false }], 2).add("e").id).toBe(5);
+  });
+
   it("does not change when the input array changes", () => {
     const todos = [{ id: 1, title: "a", done: false }];
     const store = TodoStore.from(todos);
@@ -51,6 +62,7 @@ describe("TodoStore.add", () => {
     store.add("a");
     const b = store.add("b");
     store.remove(b.id);
+    expect(store.nextId).toBe(3);
     expect(store.add("c").id).toBe(3);
   });
 });
