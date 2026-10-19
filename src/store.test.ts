@@ -1,6 +1,37 @@
 import { describe, expect, it } from "vitest";
 import { TodoStore } from "./store.js";
 
+describe("TodoStore.from", () => {
+  it("holds the given todos in order", () => {
+    const todos = [
+      { id: 3, title: "c", done: true },
+      { id: 1, title: "a", done: false },
+    ];
+    const store = TodoStore.from(todos);
+    expect(store.list()).toEqual(todos);
+    expect(store.get(3)).toEqual(todos[0]);
+  });
+
+  it("continues ids from the max id", () => {
+    const store = TodoStore.from([
+      { id: 5, title: "e", done: false },
+      { id: 2, title: "b", done: false },
+    ]);
+    expect(store.add("f").id).toBe(6);
+  });
+
+  it("starts ids at 1 when empty", () => {
+    expect(TodoStore.from([]).add("a").id).toBe(1);
+  });
+
+  it("does not change when the input array changes", () => {
+    const todos = [{ id: 1, title: "a", done: false }];
+    const store = TodoStore.from(todos);
+    todos.push({ id: 2, title: "b", done: false });
+    expect(store.list()).toHaveLength(1);
+  });
+});
+
 describe("TodoStore.add", () => {
   it("builds a trimmed, undone todo with ids starting at 1", () => {
     const store = new TodoStore();

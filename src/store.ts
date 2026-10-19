@@ -4,6 +4,15 @@ export class TodoStore {
   private readonly todos = new Map<number, Todo>();
   private nextId = 1;
 
+  static from(todos: Todo[]): TodoStore {
+    const store = new TodoStore();
+    for (const todo of todos) {
+      store.todos.set(todo.id, todo);
+      store.nextId = Math.max(store.nextId, todo.id + 1);
+    }
+    return store;
+  }
+
   add(title: string): Todo {
     const todo = createTodo(this.nextId, title);
     this.nextId++;
