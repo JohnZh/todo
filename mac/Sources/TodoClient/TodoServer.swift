@@ -34,9 +34,9 @@ public struct TodoServer: Sendable {
         return url
     }
 
-    /// Every Todo in the order they were Added, with the Stats.
-    public func list() async throws -> TodoList {
-        let url = address.appending(path: "api/todos")
+    /// The Todos in the given Filter and Sort, with the Stats over every Todo.
+    public func list(filter: Filter = .all, sort: Sort = .added) async throws -> TodoList {
+        let url = listURL(filter: filter, sort: sort)
         let data: Data
         let response: URLResponse
         do {
@@ -46,6 +46,14 @@ public struct TodoServer: Sendable {
         }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         return try Self.decodeList(status: status, data: data)
+    }
+
+    /// The `GET /api/todos` address that asks for the given Filter and Sort.
+    public func listURL(filter: Filter, sort: Sort) -> URL {
+        address.appending(path: "api/todos").appending(queryItems: [
+            URLQueryItem(name: "filter", value: filter.rawValue),
+            URLQueryItem(name: "sort", value: sort.rawValue),
+        ])
     }
 
     /// Decodes a `GET /api/todos` response: `{ todos, stats }` on success, `{ error }` otherwise.

@@ -3,12 +3,32 @@ import SwiftUI
 import TodoClient
 
 struct TodoListView: View {
-    let model: TodoListModel
+    @Bindable var model: TodoListModel
 
     var body: some View {
         content
             .frame(minWidth: 360, minHeight: 300)
+            .toolbar {
+                ToolbarItem {
+                    Picker("Filter", selection: $model.filter) {
+                        ForEach(Filter.allCases, id: \.self) { filter in
+                            Text(filter.label).tag(filter)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                ToolbarItem {
+                    Picker("Sort", selection: $model.sort) {
+                        ForEach(Sort.allCases, id: \.self) { sort in
+                            Text(sort.label).tag(sort)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+            }
             .task { await model.refresh() }
+            .onChange(of: model.filter) { Task { await model.refresh() } }
+            .onChange(of: model.sort) { Task { await model.refresh() } }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 Task { await model.refresh() }
             }
@@ -41,6 +61,26 @@ struct TodoListView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
             }
+        }
+    }
+}
+
+private extension Filter {
+    var label: String {
+        switch self {
+        case .all: "All"
+        case .active: "Active"
+        case .done: "Done"
+        }
+    }
+}
+
+private extension Sort {
+    var label: String {
+        switch self {
+        case .added: "Added"
+        case .title: "Title"
+        case .activeFirst: "Active first"
         }
     }
 }
